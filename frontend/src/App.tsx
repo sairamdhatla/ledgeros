@@ -4,8 +4,10 @@ import {
   getCases,
   getSummary,
   investigateCase,
+  runFinanceController,
   type CaseDetail,
   type CaseSummary,
+  type ControllerRunResult,
   type InvestigationResult,
   type Status,
   type Summary,
@@ -30,6 +32,9 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [investigating, setInvestigating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [controllerReport, setControllerReport] = useState<ControllerRunResult | null>(null)
+  const [controllerRunning, setControllerRunning] = useState(false)
+  const [controllerError, setControllerError] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -60,11 +65,21 @@ function App() {
 
   const navigate = (nextPage: Page) => { setPage(nextPage); setError(null); if (nextPage === 'exceptions') setExceptionFilter('ALL') }
 
+  const runController = () => {
+    if (controllerRunning) return
+    setControllerRunning(true)
+    setControllerError(null)
+    runFinanceController()
+      .then(setControllerReport)
+      .catch(() => setControllerError('Finance Controller could not complete. Check the backend connection and try again.'))
+      .finally(() => setControllerRunning(false))
+  }
+
   return <div className="app-shell">
     <Sidebar page={page} onNavigate={navigate} />
     <main className="main-content">
       <Header page={page} />
-      {page === 'reconciliation' && <Reconciliation summary={summary} cases={visibleCases} loading={loading} error={error} onOpenCase={openCase} />}
+      {page === 'reconciliation' && <Reconciliation summary={summary} cases={visibleCases} loading={loading} error={error} onOpenCase={openCase} controllerReport={controllerReport} controllerRunning={controllerRunning} controllerError={controllerError} onRunController={runController} onOpenExceptions={() => navigate('exceptions')} />}
       {page === 'exceptions' && <Exceptions cases={visibleCases} summary={summary} filter={exceptionFilter} search={search} loading={loading} error={error} onFilter={setExceptionFilter} onSearch={setSearch} onOpenCase={openCase} />}
       {page === 'audit' && <AuditTrail selectedCase={selectedCase} investigation={investigation} />}
     </main>
@@ -87,8 +102,16 @@ function Header({ page }: { page: Page }) {
   return <header className="topbar"><div><div className="breadcrumb">OPERATIONS <span>/</span> {title.toUpperCase()}</div><h1>{title}</h1><p>{subtitle}</p></div><div className="system-status"><span className="live-dot" />System operational<span className="status-divider" />Today</div></header>
 }
 
-function Reconciliation({ summary, cases, loading, error, onOpenCase }: { summary: Summary | null; cases: CaseSummary[]; loading: boolean; error: string | null; onOpenCase: (id: string) => void }) {
-  return <><section className="hero-row"><div><div className="eyebrow">RECONCILIATION RUN</div><h2>Financial truth, <em>verified.</em></h2><p>Deterministic matching with evidence-led exception handling.</p></div><div className="hero-meta"><span className="meta-label">LAST PROCESSED</span><strong>{summary?.total_cases ?? '—'}</strong><span>records in current run</span></div></section><section className="kpi-grid"><Kpi label="Total cases" value={summary?.total_cases} /><Kpi label="Matched" value={summary?.matched} tone="green" detail={summary ? `${(summary.match_rate * 100).toFixed(1)}% match rate` : undefined} /><Kpi label="Auto-resolved" value={summary?.auto_resolved} tone="cyan" detail={summary ? `${(summary.auto_resolution_rate * 100).toFixed(1)}% of cases` : undefined} /><Kpi label="Needs review" value={summary?.needs_review} tone="amber" /><Kpi label="Unresolved" value={summary?.unresolved} tone="red" /></section><CaseQueue cases={cases} loading={loading} error={error} onOpenCase={onOpenCase} /></>
+function Reconciliation({ summary, cases, loading, error, onOpenCase, controllerReport, controllerRunning, controllerError, onRunController, onOpenExceptions }: { summary: Summary | null; cases: CaseSummary[]; loading: boolean; error: string | null; onOpenCase: (id: string) => void; controllerReport: ControllerRunResult | null; controllerRunning: boolean; controllerError: string | null; onRunController: () => void; onOpenExceptions: () => void }) {
+  return <><section className="hero-row"><div><div className="eyebrow">RECONCILIATION RUN</div><h2>Financial truth, <em>verified.</em></h2><p>Deterministic matching with evidence-led exception handling.</p></div><div className="hero-meta"><span className="meta-label">LAST PROCESSED</span><strong>{summary?.total_cases ?? '—'}</strong><span>records in current run</span></div></section><section className="controller-action"><div><div className="section-kicker">FINANCE CONTROLLER</div><strong>Run the complete finance-ops workflow</strong><p>Reconcile the batch, investigate a safe review set, and prepare human-review cases.</p></div><button className="controller-button" onClick={onRunController} disabled={controllerRunning}>{controllerRunning ? 'Running Finance Controller...' : 'RUN FINANCE CONTROLLER'}</button></section>{controllerError && <div className="human-review"><span>CONTROLLER ERROR</span><b>{controllerError}</b></div>}{controllerReport && <ControllerReport report={controllerReport} onOpenExceptions={onOpenExceptions} />}<section className="kpi-grid"><Kpi label="Total cases" value={summary?.total_cases} /><Kpi label="Matched" value={summary?.matched} tone="green" detail={summary ? `${(summary.match_rate * 100).toFixed(1)}% match rate` : undefined} /><Kpi label="Auto-resolved" value={summary?.auto_resolved} tone="cyan" detail={summary ? `${(summary.auto_resolution_rate * 100).toFixed(1)}% of cases` : undefined} /><Kpi label="Needs review" value={summary?.needs_review} tone="amber" /><Kpi label="Unresolved" value={summary?.unresolved} tone="red" /></section><CaseQueue cases={cases} loading={loading} error={error} onOpenCase={onOpenCase} /></>
+}
+
+function ControllerReport({ report, onOpenExceptions }: { report: ControllerRunResult; onOpenExceptions: () => void }) {
+  return <section className="controller-report"><div className="queue-heading"><div><div className="section-kicker">CONTROLLER RUN COMPLETE</div><h2>Batch control report</h2><p>Deterministic results are authoritative; AI activity is reported separately.</p></div><button className="filter active" onClick={onOpenExceptions}>View {report.unresolved_count} unresolved exceptions</button></div><div className="controller-grid"><ReportMetric label="Records processed" value={report.total_records_processed} /><ReportMetric label="Match rate" value={`${(report.match_rate * 100).toFixed(1)}%`} /><ReportMetric label="Auto-resolution rate" value={`${(report.auto_resolution_rate * 100).toFixed(1)}%`} /><ReportMetric label="Total resolved" value={report.total_resolved_count} /><ReportMetric label="Needs review" value={report.needs_review_count} tone="amber" /><ReportMetric label="Unresolved" value={report.unresolved_count} tone="red" /><ReportMetric label="Processing time" value={`${report.processing_time_ms.toFixed(1)} ms`} /><ReportMetric label="Human-review cases" value={report.human_review_cases.length} tone="amber" /></div><div className="controller-lanes"><div><div className="section-kicker">AI INVESTIGATION ACTIVITY</div><p>Attempted <strong>{report.ai_investigations_attempted}</strong> · Successful <strong>{report.ai_investigations_successfully_completed}</strong> · Fallbacks <strong>{report.ai_fallbacks}</strong> · Not sent to AI <strong>{report.ai_investigations_skipped}</strong></p></div><div><div className="section-kicker">HUMAN REVIEW / ESCALATION</div><p><strong>{report.total_exception_count}</strong> total exceptions remain represented in review; <strong>{report.unresolved_exceptions.length}</strong> are unresolved.</p></div></div></section>
+}
+
+function ReportMetric({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
+  return <div className={`report-metric ${tone ?? ''}`}><span>{label}</span><strong>{value}</strong></div>
 }
 
 function Exceptions({ cases, summary, filter, search, loading, error, onFilter, onSearch, onOpenCase }: { cases: CaseSummary[]; summary: Summary | null; filter: ExceptionFilter; search: string; loading: boolean; error: string | null; onFilter: (filter: ExceptionFilter) => void; onSearch: (value: string) => void; onOpenCase: (id: string) => void }) {

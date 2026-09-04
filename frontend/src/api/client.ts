@@ -93,6 +93,38 @@ export interface InvestigationResult {
   }
 }
 
+export interface ControllerCaseReport {
+  case_id: string
+  deterministic_status: Status
+  deterministic_reason: string
+  deterministic_rule: string
+  evidence_ids: string[]
+  requires_human_review: boolean
+  investigation: InvestigationResult['investigation'] | null
+}
+
+export interface ControllerRunResult {
+  total_records_processed: number
+  matched_count: number
+  auto_resolved_count: number
+  needs_review_count: number
+  unresolved_count: number
+  match_rate: number
+  auto_resolution_rate: number
+  total_resolved_count: number
+  resolved_rate: number
+  processing_time_ms: number
+  total_exception_count: number
+  ai_investigations_attempted: number
+  ai_investigations_successfully_completed: number
+  ai_fallbacks: number
+  ai_investigations_skipped: number
+  unresolved_exceptions: ControllerCaseReport[]
+  human_review_cases: ControllerCaseReport[]
+  skipped_ai_cases: ControllerCaseReport[]
+  audit_cases: ControllerCaseReport[]
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -112,3 +144,4 @@ export const getCases = (status?: Status, limit = 50, offset = 0) => {
 }
 export const getCase = (caseId: string) => request<CaseDetail>(`/api/cases/${caseId}`)
 export const investigateCase = (caseId: string) => request<InvestigationResult>(`/api/cases/${caseId}/investigate`, { method: 'POST' })
+export const runFinanceController = () => request<ControllerRunResult>('/api/agent/run', { method: 'POST' })

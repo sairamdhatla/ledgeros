@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.agents.controller import CaseBundle, load_cases, run_controller
 from app.agents.investigator import build_context, investigate_exception
 from app.agents.models import InvestigationResult
-from app.reconciliation.engine import reconcile_records
-from app.reconciliation.matcher import TransactionRecords, match_records
 from app.reconciliation.models import (
     BankSettlement,
     GatewayTransaction,
@@ -20,26 +17,10 @@ from app.reconciliation.models import (
     ReconciliationResult,
     ReconciliationStatus,
 )
-from app.reconciliation.normalizer import load_bank_settlements, load_gateway_transactions, load_invoices
-
-
-GENERATED_DATA = Path(__file__).resolve().parents[3] / "data" / "generated"
 router = APIRouter()
 
 
-@dataclass(frozen=True)
-class CaseBundle:
-    records: TransactionRecords
-    result: ReconciliationResult
-
-
-def _load_cases() -> list[CaseBundle]:
-    invoices = load_invoices(GENERATED_DATA / "invoices.csv")
-    gateways = load_gateway_transactions(GENERATED_DATA / "gateway_transactions.csv")
-    banks = load_bank_settlements(GENERATED_DATA / "bank_settlements.csv")
-    records = match_records(invoices, gateways, banks)
-    results = reconcile_records(invoices, gateways, banks)
-    return [CaseBundle(record, result) for record, result in zip(records, results, strict=True)]
+_load_cases = load_cases
 
 
 def _decimal(value: Any) -> str | None:
@@ -186,3 +167,8 @@ def investigate(case_id: str) -> dict[str, Any]:
     context = build_context(bundle.records.invoice, bundle.records.gateways, bundle.records.banks, bundle.result)
     investigation: InvestigationResult = investigate_exception(case_id, context)
     return {"case_id": case_id, "investigation": investigation.model_dump(mode="json")}
+
+
+@router.post("/api/agent/run")
+def run_agent() -> dict[str, Any]:
+    return run_controller().model_dump(mode="json")
