@@ -29,11 +29,16 @@
   "false_auto_resolution_count": 0,
   "false_auto_resolution_rate": 0.0,
   "integrity_checks": {
+    "actual_case_count": 500,
+    "duplicate_ground_truth_ids": [],
     "duplicate_result_ids": [],
+    "expected_case_count": 500,
     "ground_truth_access_detected": false,
+    "ground_truth_ids_without_values": 0,
     "hardcoded_expected_results_detected": false,
     "missing_transaction_ids": [],
-    "results_without_transaction_ids": 0
+    "results_without_transaction_ids": 0,
+    "unexpected_actual_ids": []
   },
   "mismatches": [],
   "scenario_accuracy": {

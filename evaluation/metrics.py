@@ -44,10 +44,15 @@ class CaseComparison:
 
 @dataclass(frozen=True)
 class IntegrityChecks:
+    expected_case_count: int
+    actual_case_count: int
     ground_truth_access_detected: bool
     hardcoded_expected_results_detected: bool
     missing_transaction_ids: tuple[str, ...]
+    unexpected_actual_ids: tuple[str, ...]
+    duplicate_ground_truth_ids: tuple[str, ...]
     duplicate_result_ids: tuple[str, ...]
+    ground_truth_ids_without_values: int
     results_without_transaction_ids: int
 
     @property
@@ -56,11 +61,40 @@ class IntegrityChecks:
             (
                 self.ground_truth_access_detected,
                 self.hardcoded_expected_results_detected,
+                self.actual_case_count != self.expected_case_count,
                 self.missing_transaction_ids,
+                self.unexpected_actual_ids,
+                self.duplicate_ground_truth_ids,
                 self.duplicate_result_ids,
+                self.ground_truth_ids_without_values,
                 self.results_without_transaction_ids,
             )
         )
+
+
+class EvaluationIntegrityError(ValueError):
+    """Raised when evaluation inputs do not have one-to-one case identity."""
+
+    def __init__(self, checks: IntegrityChecks) -> None:
+        self.checks = checks
+        failures = []
+        if checks.expected_case_count != 500:
+            failures.append(f"expected case count is {checks.expected_case_count}, not 500")
+        if checks.actual_case_count != checks.expected_case_count:
+            failures.append("actual and expected case counts differ")
+        if checks.missing_transaction_ids:
+            failures.append(f"missing actual IDs: {checks.missing_transaction_ids}")
+        if checks.unexpected_actual_ids:
+            failures.append(f"unexpected actual IDs: {checks.unexpected_actual_ids}")
+        if checks.duplicate_ground_truth_ids:
+            failures.append(f"duplicate ground-truth IDs: {checks.duplicate_ground_truth_ids}")
+        if checks.duplicate_result_ids:
+            failures.append(f"duplicate actual IDs: {checks.duplicate_result_ids}")
+        if checks.ground_truth_ids_without_values:
+            failures.append("ground-truth rows contain blank transaction IDs")
+        if checks.results_without_transaction_ids:
+            failures.append("actual results contain blank transaction IDs")
+        super().__init__("Evaluation integrity check failed: " + "; ".join(failures))
 
 
 @dataclass(frozen=True)
@@ -91,17 +125,30 @@ def _confusion_matrix(comparisons: Iterable[CaseComparison]) -> dict[str, dict[s
     return matrix
 
 
-def _integrity_checks(results: list[ReconciliationResult], reconciliation_path: Path, expected_ids: set[str]) -> IntegrityChecks:
+def _integrity_checks(
+    results: list[ReconciliationResult],
+    ground_truth_rows: list[Mapping[str, str]],
+    reconciliation_path: Path,
+) -> IntegrityChecks:
     result_ids = [result.transaction_id for result in results]
-    counts = Counter(result_ids)
+    expected_ids = [row.get("transaction_id", "").strip() for row in ground_truth_rows]
+    result_counts = Counter(result_ids)
+    expected_counts = Counter(expected_ids)
+    expected_id_set = set(expected_ids) - {""}
+    result_id_set = set(result_ids) - {""}
     source_text = "\n".join(path.read_text(encoding="utf-8") for path in reconciliation_path.glob("*.py"))
     ground_truth_accessed = bool(re.search(r"ground[_ ]truth|expected_outcome", source_text, re.IGNORECASE))
     hardcoded_results = bool(re.search(r"TXN[-_]\d{3,}|expected_(?:status|scenario|outcome)", source_text, re.IGNORECASE))
     return IntegrityChecks(
+        expected_case_count=len(ground_truth_rows),
+        actual_case_count=len(results),
         ground_truth_access_detected=ground_truth_accessed,
         hardcoded_expected_results_detected=hardcoded_results,
-        missing_transaction_ids=tuple(sorted(expected_ids - set(result_ids))),
-        duplicate_result_ids=tuple(sorted(transaction_id for transaction_id, count in counts.items() if transaction_id and count > 1)),
+        missing_transaction_ids=tuple(sorted(expected_id_set - result_id_set)),
+        unexpected_actual_ids=tuple(sorted(result_id_set - expected_id_set)),
+        duplicate_ground_truth_ids=tuple(sorted(transaction_id for transaction_id, count in expected_counts.items() if transaction_id and count > 1)),
+        duplicate_result_ids=tuple(sorted(transaction_id for transaction_id, count in result_counts.items() if transaction_id and count > 1)),
+        ground_truth_ids_without_values=sum(not transaction_id for transaction_id in expected_ids),
         results_without_transaction_ids=sum(not result.transaction_id for result in results),
     )
 
@@ -111,8 +158,16 @@ def evaluate(
     ground_truth_rows: Iterable[Mapping[str, str]],
     *,
     reconciliation_path: Path,
+    expected_case_count: int = 500,
 ) -> EvaluationMetrics:
     """Compare engine results with ground truth and calculate reproducible metrics."""
+    ground_truth_rows = list(ground_truth_rows)
+    integrity = _integrity_checks(results, ground_truth_rows, reconciliation_path)
+    if integrity.expected_case_count != expected_case_count:
+        raise EvaluationIntegrityError(integrity)
+    if not integrity.passed:
+        raise EvaluationIntegrityError(integrity)
+
     truth_by_id = {row["transaction_id"]: row for row in ground_truth_rows}
     comparisons: list[CaseComparison] = []
     for result in results:
@@ -142,7 +197,6 @@ def evaluate(
         if scenario_comparisons
     }
     mismatches = tuple(asdict(comparison) for comparison in comparisons if not comparison.correct)
-    integrity = _integrity_checks(results, reconciliation_path, set(truth_by_id))
     return EvaluationMetrics(
         total_cases=total_cases,
         exact_status_accuracy=sum(comparison.correct for comparison in comparisons) / total_cases if total_cases else 0.0,
