@@ -26,7 +26,7 @@ from .provider import InvestigationProvider
 
 GENERATED_DATA = Path(__file__).resolve().parents[3] / "data" / "generated"
 REVIEW_STATUSES = {ReconciliationStatus.NEEDS_REVIEW, ReconciliationStatus.UNRESOLVED}
-DEFAULT_MAX_AI_INVESTIGATIONS = 10
+DEFAULT_MAX_AI_INVESTIGATIONS = 5
 
 
 @dataclass(frozen=True)

@@ -109,11 +109,11 @@ def test_controller_default_limit_skips_remaining_cases(monkeypatch: pytest.Monk
     report = run_controller(provider=ValidProvider())
 
     assert report.total_exception_count == 284
-    assert report.ai_investigations_attempted == 10
-    assert report.ai_investigations_successfully_completed == 10
+    assert report.ai_investigations_attempted == 5
+    assert report.ai_investigations_successfully_completed == 5
     assert report.ai_fallbacks == 0
-    assert report.ai_investigations_skipped == 274
-    assert len(report.skipped_ai_cases) == 274
+    assert report.ai_investigations_skipped == 279
+    assert len(report.skipped_ai_cases) == 279
     assert all(case.investigation is None for case in report.skipped_ai_cases)
     assert len(report.human_review_cases) == 284
 
