@@ -125,9 +125,46 @@ def _fallback(context: InvestigationContext, flags: tuple[str, ...]) -> Investig
     )
 
 
+def _parse_provider_json(raw: str) -> Any:
+    content = raw.strip()
+    if content.startswith("```") and content.endswith("```"):
+        lines = content.splitlines()
+        if len(lines) < 3:
+            raise ValueError("provider returned an empty code fence")
+        fence = lines[0].strip().lower()
+        if fence not in {"```", "```json"}:
+            raise ValueError("provider returned an unsupported code fence")
+        content = "\n".join(lines[1:-1]).strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        candidates: list[Any] = []
+        position = 0
+        while position < len(content):
+            start = content.find("{", position)
+            if start < 0:
+                break
+            try:
+                candidate, end = decoder.raw_decode(content, start)
+            except json.JSONDecodeError:
+                position = start + 1
+                continue
+            if not isinstance(candidate, dict):
+                raise ValueError("provider JSON object was not an object")
+            candidates.append(candidate)
+            if len(candidates) > 1:
+                raise ValueError("provider response contained multiple JSON objects")
+            position = end
+        if len(candidates) != 1:
+            raise ValueError("provider response did not contain one JSON object")
+        return candidates[0]
+
+
 def _validate_provider_result(raw: Any, context: InvestigationContext, confidence_threshold: float) -> InvestigationResult:
     if isinstance(raw, str):
-        raw = json.loads(raw)
+        raw = _parse_provider_json(raw)
     result = InvestigationResult.model_validate(raw)
     allowed_ids = set(context.reconciliation.evidence_ids)
     if result.case_id != context.case_id:

@@ -1,7 +1,13 @@
 """FastAPI entrypoint for the LedgerOS demo API."""
 
+from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Resolve the project-local environment file independently of the shell cwd.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from app.api.routes import router
 

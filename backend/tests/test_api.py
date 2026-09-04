@@ -1,11 +1,21 @@
+import os
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.agents.provider import configured_provider
 
 
 client = TestClient(app)
+
+
+def test_startup_loads_backend_env_for_openrouter_without_exposing_key() -> None:
+    configured = configured_provider()
+    assert os.getenv("OPENROUTER_API_KEY")
+    assert os.getenv("OPENROUTER_MODEL") == "google/gemma-4-26b-a4b-it"
+    assert configured is not None
+    assert configured.model == "google/gemma-4-26b-a4b-it"
 
 
 def test_health_endpoint() -> None:
@@ -63,7 +73,7 @@ def test_missing_case_returns_404() -> None:
 
 
 def test_investigation_endpoint_uses_deterministic_fallback_without_key(monkeypatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     response = client.post("/api/cases/TXN-000006/investigate")
     body = response.json()
     assert response.status_code == 200
