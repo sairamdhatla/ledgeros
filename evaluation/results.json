@@ -1,0 +1,56 @@
+{
+  "confusion_matrix": {
+    "AUTO_RESOLVED": {
+      "AUTO_RESOLVED": 144,
+      "MATCHED": 0,
+      "NEEDS_REVIEW": 0,
+      "UNRESOLVED": 0
+    },
+    "MATCHED": {
+      "AUTO_RESOLVED": 0,
+      "MATCHED": 72,
+      "NEEDS_REVIEW": 0,
+      "UNRESOLVED": 0
+    },
+    "NEEDS_REVIEW": {
+      "AUTO_RESOLVED": 0,
+      "MATCHED": 0,
+      "NEEDS_REVIEW": 213,
+      "UNRESOLVED": 0
+    },
+    "UNRESOLVED": {
+      "AUTO_RESOLVED": 0,
+      "MATCHED": 0,
+      "NEEDS_REVIEW": 0,
+      "UNRESOLVED": 71
+    }
+  },
+  "exact_status_accuracy": 1.0,
+  "false_auto_resolution_count": 0,
+  "false_auto_resolution_rate": 0.0,
+  "integrity_checks": {
+    "duplicate_result_ids": [],
+    "ground_truth_access_detected": false,
+    "hardcoded_expected_results_detected": false,
+    "missing_transaction_ids": [],
+    "results_without_transaction_ids": 0
+  },
+  "mismatches": [],
+  "scenario_accuracy": {
+    "duplicate_transaction": 1.0,
+    "exact_match": 1.0,
+    "gateway_fee": 1.0,
+    "missing_bank_settlement": 1.0,
+    "partial_payment": 1.0,
+    "settlement_timing": 1.0,
+    "unexplained_discrepancy": 1.0
+  },
+  "status_precision": {
+    "AUTO_RESOLVED": 1.0,
+    "MATCHED": 1.0,
+    "NEEDS_REVIEW": 1.0,
+    "UNRESOLVED": 1.0
+  },
+  "total_cases": 500,
+  "unresolved_case_count": 71
+}
