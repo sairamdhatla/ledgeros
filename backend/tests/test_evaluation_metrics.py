@@ -1,11 +1,15 @@
 from decimal import Decimal
+import csv
 from pathlib import Path
 import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.reconciliation.models import ReconciliationResult, ReconciliationStatus
-from evaluation.metrics import evaluate
+from app.reconciliation.engine import reconcile_csv_files
+from evaluation.metrics import EvaluationIntegrityError, evaluate
 
 
 def result(transaction_id: str, status: ReconciliationStatus) -> ReconciliationResult:
@@ -44,7 +48,7 @@ def test_metrics_calculate_precision_confusion_and_scenario_accuracy(tmp_path: P
         truth("TXN-4", "unexplained_discrepancy", "unexplained_discrepancy"),
     ]
 
-    metrics = evaluate(results, ground_truth, reconciliation_path=tmp_path)
+    metrics = evaluate(results, ground_truth, reconciliation_path=tmp_path, expected_case_count=4)
 
     assert metrics.total_cases == 4
     assert metrics.exact_status_accuracy == 0.75
@@ -57,14 +61,55 @@ def test_metrics_calculate_precision_confusion_and_scenario_accuracy(tmp_path: P
     assert len(metrics.mismatches) == 1
 
 
-def test_integrity_checks_detect_missing_and_duplicate_results(tmp_path: Path) -> None:
-    results = [result("TXN-1", ReconciliationStatus.MATCHED), result("TXN-1", ReconciliationStatus.MATCHED)]
+def valid_truth() -> list[dict[str, str]]:
+    return [truth(f"TXN-{index}", "exact_match", "matched") for index in range(1, 4)]
+
+
+@pytest.mark.parametrize(
+    ("case_name", "actual_results", "ground_truth_rows", "expected_message"),
+    [
+        ("missing actual", [result("TXN-1", ReconciliationStatus.MATCHED), result("TXN-2", ReconciliationStatus.MATCHED)], valid_truth(), "missing actual IDs"),
+        ("extra actual", [result(f"TXN-{index}", ReconciliationStatus.MATCHED) for index in range(1, 4)] + [result("TXN-EXTRA", ReconciliationStatus.MATCHED)], valid_truth(), "unexpected actual IDs"),
+        ("duplicate actual", [result("TXN-1", ReconciliationStatus.MATCHED), result("TXN-1", ReconciliationStatus.MATCHED), result("TXN-2", ReconciliationStatus.MATCHED), result("TXN-3", ReconciliationStatus.MATCHED)], valid_truth(), "duplicate actual IDs"),
+        ("duplicate ground truth", [result(f"TXN-{index}", ReconciliationStatus.MATCHED) for index in range(1, 4)], valid_truth() + [truth("TXN-1", "exact_match", "matched")], "duplicate ground-truth IDs"),
+        ("mismatched ID", [result("TXN-1", ReconciliationStatus.MATCHED), result("TXN-2", ReconciliationStatus.MATCHED), result("TXN-WRONG", ReconciliationStatus.MATCHED)], valid_truth(), "missing actual IDs"),
+    ],
+)
+def test_integrity_failures_are_loud(
+    case_name: str,
+    actual_results: list[ReconciliationResult],
+    ground_truth_rows: list[dict[str, str]],
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    del case_name
+    with pytest.raises(EvaluationIntegrityError, match=expected_message):
+        evaluate(actual_results, ground_truth_rows, reconciliation_path=tmp_path, expected_case_count=len(ground_truth_rows))
+
+
+def test_valid_small_dataset_calculates_only_after_integrity_passes(tmp_path: Path) -> None:
     metrics = evaluate(
-        results,
-        [truth("TXN-1", "exact_match", "matched"), truth("TXN-2", "exact_match", "matched")],
+        [result(f"TXN-{index}", ReconciliationStatus.MATCHED) for index in range(1, 4)],
+        valid_truth(),
         reconciliation_path=tmp_path,
+        expected_case_count=3,
+    )
+    assert metrics.exact_status_accuracy == 1.0
+    assert metrics.integrity_checks.passed is True
+
+
+def test_valid_generated_dataset_has_exactly_500_cases(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    generated = repository_root / "data" / "generated"
+    with (generated / "ground_truth.csv").open(newline="", encoding="utf-8") as input_file:
+        ground_truth_rows = list(csv.DictReader(input_file))
+    results = reconcile_csv_files(
+        generated / "invoices.csv",
+        generated / "gateway_transactions.csv",
+        generated / "bank_settlements.csv",
     )
 
-    assert metrics.integrity_checks.missing_transaction_ids == ("TXN-2",)
-    assert metrics.integrity_checks.duplicate_result_ids == ("TXN-1",)
-    assert metrics.integrity_checks.passed is False
+    metrics = evaluate(results, ground_truth_rows, reconciliation_path=repository_root / "backend" / "app" / "reconciliation")
+
+    assert metrics.total_cases == 500
+    assert metrics.integrity_checks.passed is True
