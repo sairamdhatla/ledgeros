@@ -17,6 +17,11 @@ from app.reconciliation.models import (
     ReconciliationResult,
     ReconciliationStatus,
 )
+from app.services.razorpay import (
+    RazorpayError,
+    configured_razorpay_client,
+    load_razorpay_config,
+)
 router = APIRouter()
 
 
@@ -172,3 +177,70 @@ def investigate(case_id: str) -> dict[str, Any]:
 @router.post("/api/agent/run")
 def run_agent() -> dict[str, Any]:
     return run_controller().model_dump(mode="json")
+
+
+@router.get("/api/razorpay/status")
+def razorpay_status() -> dict[str, Any]:
+    config = load_razorpay_config()
+    return {
+        "configured": config is not None,
+        "masked_key_id": config.masked_key_id() if config else "",
+        "read_only": True,
+    }
+
+
+@router.get("/api/razorpay/payments")
+def razorpay_payments(
+    count: int = Query(default=10, ge=1, le=100),
+    skip: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    client = configured_razorpay_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay API credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend/.env",
+        )
+    try:
+        payments = client.list_payments(count=count, skip=skip)
+        return [payment.model_dump(mode="json") for payment in payments]
+    except RazorpayError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@router.get("/api/razorpay/settlements")
+def razorpay_settlements(
+    count: int = Query(default=10, ge=1, le=100),
+    skip: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    client = configured_razorpay_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay API credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend/.env",
+        )
+    try:
+        settlements = client.list_settlements(count=count, skip=skip)
+        return [settlement.model_dump(mode="json") for settlement in settlements]
+    except RazorpayError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@router.get("/api/razorpay/recon")
+def razorpay_recon(
+    year: int = Query(ge=2020, le=2030),
+    month: int = Query(ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
+    count: int = Query(default=50, ge=1, le=100),
+    skip: int = Query(default=0, ge=0),
+) -> list[dict[str, Any]]:
+    client = configured_razorpay_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay API credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend/.env",
+        )
+    try:
+        recon_items = client.get_settlement_recon(year=year, month=month, day=day, count=count, skip=skip)
+        return [item.model_dump(mode="json") for item in recon_items]
+    except RazorpayError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error

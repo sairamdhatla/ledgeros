@@ -87,3 +87,40 @@ def test_api_source_does_not_reference_restricted_data_files() -> None:
     source = "\n".join(path.read_text(encoding="utf-8") for path in Path(__file__).parents[1].glob("app/api/*.py"))
     assert "ground_truth.csv" not in source
     assert "results.json" not in source
+
+
+def test_razorpay_status_endpoint_unconfigured(monkeypatch) -> None:
+    monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
+    monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
+    response = client.get("/api/razorpay/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is False
+    assert body["read_only"] is True
+
+
+def test_razorpay_status_endpoint_configured(monkeypatch) -> None:
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_1234567890")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "super_secret_xyz")
+    response = client.get("/api/razorpay/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["masked_key_id"] == "rzp_test***"
+    assert "super_secret_xyz" not in response.text
+
+
+def test_razorpay_payments_unconfigured_returns_503(monkeypatch) -> None:
+    monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
+    monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
+    response = client.get("/api/razorpay/payments")
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
+
+
+def test_razorpay_settlements_unconfigured_returns_503(monkeypatch) -> None:
+    monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
+    monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
+    response = client.get("/api/razorpay/settlements")
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
