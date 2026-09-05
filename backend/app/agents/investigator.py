@@ -20,6 +20,7 @@ from .models import (
     InvoiceEvidence,
     ReconciliationEvidence,
     RecommendedAction,
+    RootCause,
 )
 from .provider import CONFIDENCE_THRESHOLD, InvestigationProvider, ProviderError, configured_provider
 
@@ -95,6 +96,19 @@ def _fallback_discrepancy(context: InvestigationContext) -> DiscrepancyType:
     return mapping.get(context.reconciliation.deterministic_rule, DiscrepancyType.NONE)
 
 
+def _fallback_root_cause(context: InvestigationContext) -> RootCause:
+    mapping = {
+        "EXACT_MATCH": RootCause.EXACT_MATCH,
+        "GATEWAY_FEE_DEDUCTION": RootCause.GATEWAY_FEE,
+        "SETTLEMENT_TIMING_DIFFERENCE": RootCause.SETTLEMENT_TIMING,
+        "PARTIAL_PAYMENT": RootCause.PARTIAL_PAYMENT,
+        "DUPLICATE_GATEWAY_TRANSACTION": RootCause.DUPLICATE_TRANSACTION,
+        "MISSING_BANK_SETTLEMENT": RootCause.MISSING_BANK_SETTLEMENT,
+        "UNEXPLAINED_DISCREPANCY": RootCause.UNEXPLAINED_DISCREPANCY,
+    }
+    return mapping.get(context.reconciliation.deterministic_rule, RootCause.UNEXPLAINED_DISCREPANCY)
+
+
 def _fallback_action(discrepancy: DiscrepancyType) -> RecommendedAction:
     return {
         DiscrepancyType.GATEWAY_FEE: RecommendedAction.REVIEW_SOURCE_RECORDS,
@@ -109,12 +123,14 @@ def _fallback_action(discrepancy: DiscrepancyType) -> RecommendedAction:
 
 def _fallback(context: InvestigationContext, flags: tuple[str, ...]) -> InvestigationResult:
     discrepancy = _fallback_discrepancy(context)
+    root_cause = _fallback_root_cause(context)
     requires_review = context.reconciliation.deterministic_status in {"NEEDS_REVIEW", "UNRESOLVED"} or bool(flags) or not context.reconciliation.evidence_consistent
     evidence_ids = context.reconciliation.evidence_ids
     return InvestigationResult(
         case_id=context.case_id,
         conclusion=context.reconciliation.deterministic_reason,
         discrepancy_type=discrepancy,
+        root_cause=root_cause,
         confidence=1.0 if context.reconciliation.evidence_consistent else 0.5,
         evidence_ids=evidence_ids,
         evidence_summary=f"Deterministic reconciliation evidence: {', '.join(evidence_ids)}.",

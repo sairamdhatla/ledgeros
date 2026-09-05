@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +21,16 @@ class RecommendedAction(str, Enum):
 
 class DiscrepancyType(str, Enum):
     NONE = "NONE"
+    GATEWAY_FEE = "GATEWAY_FEE"
+    SETTLEMENT_TIMING = "SETTLEMENT_TIMING"
+    PARTIAL_PAYMENT = "PARTIAL_PAYMENT"
+    DUPLICATE_TRANSACTION = "DUPLICATE_TRANSACTION"
+    MISSING_BANK_SETTLEMENT = "MISSING_BANK_SETTLEMENT"
+    UNEXPLAINED_DISCREPANCY = "UNEXPLAINED_DISCREPANCY"
+
+
+class RootCause(str, Enum):
+    EXACT_MATCH = "EXACT_MATCH"
     GATEWAY_FEE = "GATEWAY_FEE"
     SETTLEMENT_TIMING = "SETTLEMENT_TIMING"
     PARTIAL_PAYMENT = "PARTIAL_PAYMENT"
@@ -77,6 +88,7 @@ class InvestigationContext(BaseModel):
     gateway: tuple[GatewayEvidence, ...] = ()
     bank: tuple[BankEvidence, ...] = ()
     reconciliation: ReconciliationEvidence
+    tool_results: dict[str, Any] = Field(default_factory=dict)
 
 
 class InvestigationResult(BaseModel):
@@ -85,6 +97,7 @@ class InvestigationResult(BaseModel):
     case_id: str = Field(min_length=1)
     conclusion: str = Field(min_length=1)
     discrepancy_type: DiscrepancyType
+    root_cause: RootCause
     confidence: float = Field(ge=0, le=1)
     evidence_ids: tuple[str, ...] = Field(min_length=1)
     evidence_summary: str = Field(min_length=1)

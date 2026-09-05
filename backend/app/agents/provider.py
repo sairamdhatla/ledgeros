@@ -20,7 +20,7 @@ INVESTIGATION_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "case_id", "conclusion", "discrepancy_type", "confidence", "evidence_ids",
+        "case_id", "conclusion", "discrepancy_type", "root_cause", "confidence", "evidence_ids",
         "evidence_summary", "recommended_action", "requires_human_review", "ai_generated",
         "guardrail_flags",
     ],
@@ -29,6 +29,10 @@ INVESTIGATION_JSON_SCHEMA = {
         "conclusion": {"type": "string"},
         "discrepancy_type": {"type": "string", "enum": [
             "NONE", "GATEWAY_FEE", "SETTLEMENT_TIMING", "PARTIAL_PAYMENT",
+            "DUPLICATE_TRANSACTION", "MISSING_BANK_SETTLEMENT", "UNEXPLAINED_DISCREPANCY",
+        ]},
+        "root_cause": {"type": "string", "enum": [
+            "EXACT_MATCH", "GATEWAY_FEE", "SETTLEMENT_TIMING", "PARTIAL_PAYMENT",
             "DUPLICATE_TRANSACTION", "MISSING_BANK_SETTLEMENT", "UNEXPLAINED_DISCREPANCY",
         ]},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
@@ -55,12 +59,14 @@ You must never change the deterministic reconciliation status.
 If evidence conflicts or is insufficient, explicitly say so and recommend human review.
 Use only supplied evidence.
 Return only valid JSON with every required field: case_id, conclusion, discrepancy_type,
-confidence, evidence_ids, evidence_summary, recommended_action, requires_human_review,
+root_cause, confidence, evidence_ids, evidence_summary, recommended_action, requires_human_review,
 ai_generated, and guardrail_flags. The case_id and evidence_ids must come from the supplied
 context. discrepancy_type must be one of NONE, GATEWAY_FEE, SETTLEMENT_TIMING, PARTIAL_PAYMENT,
-DUPLICATE_TRANSACTION, MISSING_BANK_SETTLEMENT, or UNEXPLAINED_DISCREPANCY. recommended_action
-must be one of NO_ACTION, REVIEW_SOURCE_RECORDS, VERIFY_SETTLEMENT, VERIFY_PAYMENT,
-INVESTIGATE_DUPLICATE, or ESCALATE. Set ai_generated to true only for this response.
+DUPLICATE_TRANSACTION, MISSING_BANK_SETTLEMENT, or UNEXPLAINED_DISCREPANCY. root_cause must be
+one of EXACT_MATCH, GATEWAY_FEE, SETTLEMENT_TIMING, PARTIAL_PAYMENT, DUPLICATE_TRANSACTION,
+MISSING_BANK_SETTLEMENT, or UNEXPLAINED_DISCREPANCY. recommended_action must be one of
+NO_ACTION, REVIEW_SOURCE_RECORDS, VERIFY_SETTLEMENT, VERIFY_PAYMENT, INVESTIGATE_DUPLICATE,
+or ESCALATE. Set ai_generated to true only for this response.
 Every factual claim must be traceable to one or more supplied evidence IDs.
 
 Prefer human review when evidence conflicts, duplicate records are involved, settlement is missing,

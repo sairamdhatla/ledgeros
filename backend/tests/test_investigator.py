@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agents.investigator import build_context, investigate_exception
-from app.agents.models import DiscrepancyType, InvestigationResult
+from app.agents.models import DiscrepancyType, InvestigationResult, RootCause
 from app.agents.provider import OpenRouterProvider
 from app.reconciliation.models import BankSettlement, GatewayTransaction, Invoice, ReconciliationResult, ReconciliationStatus
 
@@ -36,6 +36,7 @@ def valid_payload() -> dict[str, object]:
         "case_id": "TXN-TEST",
         "conclusion": "The recorded gateway fee explains the settlement amount.",
         "discrepancy_type": "GATEWAY_FEE",
+        "root_cause": "GATEWAY_FEE",
         "confidence": 0.95,
         "evidence_ids": ["TXN-TEST", "GW-TEST", "BNK-TEST"],
         "evidence_summary": "Invoice, gateway, and bank records support the fee explanation.",
@@ -214,3 +215,35 @@ def test_frontend_does_not_contain_provider_credentials_or_configuration() -> No
     frontend_source = "\n".join(path.read_text(encoding="utf-8") for path in Path(__file__).parents[2].glob("frontend/src/**/*" ) if path.is_file())
     assert "OPENROUTER_API_KEY" not in frontend_source
     assert "OPENAI_API_KEY" not in frontend_source
+
+
+def test_valid_root_cause_is_accepted() -> None:
+    payload = valid_payload()
+    payload["root_cause"] = "SETTLEMENT_TIMING"
+    result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
+    assert result.root_cause == RootCause.SETTLEMENT_TIMING
+
+
+def test_invalid_root_cause_triggers_fallback() -> None:
+    payload = valid_payload()
+    payload["root_cause"] = "INVALID_ROOT_CAUSE"
+    result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
+    assert result.ai_generated is False
+    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+
+
+def test_fallback_assigns_root_cause_from_deterministic_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = investigate_exception("TXN-TEST", investigation_context(), provider=None)
+    assert result.root_cause == RootCause.GATEWAY_FEE
+
+
+def test_tools_return_expected_evidence() -> None:
+    from app.agents.investigator_tools import get_case_evidence, get_related_transactions
+    context = investigation_context()
+    evidence = get_case_evidence(context)
+    assert evidence["invoice"]["invoice_id"] == "TXN-TEST"
+    assert len(evidence["gateways"]) == 1
+    related = get_related_transactions(context)
+    assert related["gateway_transaction_ids"] == ["GW-TEST"]
+    assert related["bank_settlement_ids"] == ["BNK-TEST"]

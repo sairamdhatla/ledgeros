@@ -30,6 +30,7 @@ class ValidProvider:
             "case_id": context.case_id,
             "conclusion": "The deterministic exception requires evidence review.",
             "discrepancy_type": "UNEXPLAINED_DISCREPANCY",
+            "root_cause": "UNEXPLAINED_DISCREPANCY",
             "confidence": 0.9,
             "evidence_ids": list(context.reconciliation.evidence_ids),
             "evidence_summary": "The supplied case evidence was reviewed.",
@@ -46,6 +47,7 @@ class InvalidProvider:
             "case_id": context.case_id,
             "conclusion": "Invalid result",
             "discrepancy_type": "UNEXPLAINED_DISCREPANCY",
+            "root_cause": "UNEXPLAINED_DISCREPANCY",
             "confidence": 0.9,
             "evidence_ids": ["NOT-SUPPLIED"],
             "evidence_summary": "Invalid evidence.",
@@ -229,12 +231,9 @@ def test_run_controller_razorpay_no_credentials_exposed() -> None:
     report_json = report.model_dump_json()
     assert "super_secret_xyz" not in report_json
     assert "rzp_test_1234567890" not in report_json
-    """Test that default mode is synthetic and loads 500 cases."""
-    bundles = load_cases_by_mode(mode="synthetic")
-    assert len(bundles) == 500
 
 
-def test_load_cases_by_mode_explicit_synthetic() -> None:
+def test_load_cases_by_mode_default_synthetic() -> None:
     """Test explicit synthetic mode loads 500 cases."""
     bundles = load_cases_by_mode(mode="synthetic")
     assert len(bundles) == 500

@@ -27,6 +27,7 @@ from app.services.razorpay import (
 from app.services.razorpay.adapter import RazorpayAdapter
 
 from .investigator import build_context, investigate_exception
+from .investigator_tools import get_case_evidence, get_payment, get_related_transactions, get_settlement_recon
 from .models import InvestigationResult
 from .provider import InvestigationProvider
 
@@ -179,6 +180,23 @@ def _case_report(bundle: CaseBundle, investigation: InvestigationResult | None) 
     )
 
 
+def _run_tools(context, razorpay_client):
+    tool_results = {
+        "case_evidence": get_case_evidence(context),
+        "related_transactions": get_related_transactions(context),
+    }
+    if razorpay_client is not None:
+        payment_ids = [gateway.transaction_id for gateway in context.gateway[:1]]
+        for payment_id in payment_ids:
+            payment = get_payment(payment_id, razorpay_client)
+            if payment is not None:
+                tool_results[f"payment_{payment_id}"] = payment
+        recon = get_settlement_recon(context.case_id, razorpay_client, context)
+        if recon is not None:
+            tool_results["settlement_recon"] = recon
+    return tool_results
+
+
 def run_controller(
     provider: InvestigationProvider | None = None,
     bundles: list[CaseBundle] | None = None,
@@ -227,6 +245,11 @@ def run_controller(
             continue
         attempted += 1
         context = build_context(bundle.records.invoice, bundle.records.gateways, bundle.records.banks, bundle.result)
+        if mode == "razorpay":
+            tool_client = configured_razorpay_client()
+        else:
+            tool_client = None
+        context.tool_results = _run_tools(context, tool_client)
         investigation = investigate_exception(bundle.result.transaction_id, context, provider=provider)
         successful += int(investigation.ai_generated)
         fallbacks += int(not investigation.ai_generated)
