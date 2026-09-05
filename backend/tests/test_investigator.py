@@ -83,7 +83,7 @@ def test_multiple_json_objects_are_rejected() -> None:
     payload = f"{json.dumps(valid_payload())}\n{json.dumps(valid_payload())}"
     result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_OUTPUT_INVALID" in result.guardrail_flags
 
 
 def test_missing_api_key_uses_deterministic_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,7 +126,7 @@ def test_openrouter_failure_uses_deterministic_fallback(monkeypatch: pytest.Monk
     result = investigate_exception("TXN-TEST", investigation_context(), OpenRouterProvider("secret", "test/model"))
 
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_PROVIDER_UNAVAILABLE" in result.guardrail_flags
 
 
 def test_openrouter_malformed_response_uses_deterministic_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,7 +139,7 @@ def test_openrouter_malformed_response_uses_deterministic_fallback(monkeypatch: 
     result = investigate_exception("TXN-TEST", investigation_context(), OpenRouterProvider("secret", "test/model"))
 
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_OUTPUT_INVALID" in result.guardrail_flags
 
 
 @pytest.mark.parametrize("payload", [
@@ -150,7 +150,7 @@ def test_openrouter_malformed_response_uses_deterministic_fallback(monkeypatch: 
 def test_malformed_or_invalid_provider_output_falls_back(payload: object) -> None:
     result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_OUTPUT_INVALID" in result.guardrail_flags
 
 
 def test_unknown_evidence_and_mismatched_case_fall_back() -> None:
@@ -158,7 +158,7 @@ def test_unknown_evidence_and_mismatched_case_fall_back() -> None:
     payload["evidence_ids"] = ["NOT-SUPPLIED"]
     result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_OUTPUT_INVALID" in result.guardrail_flags
 
     with pytest.raises(ValueError):
         investigate_exception("TXN-OTHER", investigation_context())
@@ -229,7 +229,7 @@ def test_invalid_root_cause_triggers_fallback() -> None:
     payload["root_cause"] = "INVALID_ROOT_CAUSE"
     result = investigate_exception("TXN-TEST", investigation_context(), MockProvider(payload))
     assert result.ai_generated is False
-    assert "AI_OUTPUT_REJECTED" in result.guardrail_flags
+    assert "AI_OUTPUT_INVALID" in result.guardrail_flags
 
 
 def test_fallback_assigns_root_cause_from_deterministic_rule(monkeypatch: pytest.MonkeyPatch) -> None:

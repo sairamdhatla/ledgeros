@@ -83,6 +83,7 @@ export interface InvestigationResult {
     case_id: string
     conclusion: string
     discrepancy_type: string
+    root_cause: string
     confidence: number
     evidence_ids: string[]
     evidence_summary: string

@@ -212,5 +212,19 @@ def investigate_exception(
         return _fallback(context, ("AI_PROVIDER_UNAVAILABLE",))
     try:
         return _validate_provider_result(provider.investigate(context), context, confidence_threshold)
-    except (ProviderError, ValueError, TypeError, json.JSONDecodeError, ValidationError) as error:
-        return _fallback(context, ("AI_OUTPUT_REJECTED", type(error).__name__))
+    except ProviderError as error:
+        message = str(error)
+        flag = "AI_OUTPUT_REJECTED"
+        if message.startswith("OpenRouter AI_PROVIDER_"):
+            flag = message.split(":", 1)[0].replace("OpenRouter ", "")
+        elif "rate limit" in message.lower() or "429" in message:
+            flag = "AI_PROVIDER_RATE_LIMITED"
+        elif "timeout" in message.lower() or "timed out" in message.lower():
+            flag = "AI_PROVIDER_TIMEOUT"
+        elif "auth" in message.lower() or "401" in message or "invalid api key" in message.lower():
+            flag = "AI_PROVIDER_AUTH_FAILED"
+        elif "bad request" in message.lower() or "400" in message:
+            flag = "AI_PROVIDER_BAD_REQUEST"
+        return _fallback(context, (flag, type(error).__name__))
+    except (ValueError, TypeError, json.JSONDecodeError, ValidationError) as error:
+        return _fallback(context, ("AI_OUTPUT_INVALID", type(error).__name__))
