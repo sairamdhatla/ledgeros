@@ -19,7 +19,7 @@ def test_startup_loads_backend_env_for_openrouter_without_exposing_key() -> None
     assert os.getenv("OPENROUTER_API_KEY")
     assert os.getenv("OPENROUTER_MODEL") == "google/gemma-4-26b-a4b-it:free"
     assert configured is not None
-    assert configured.model == "google/gemma-4-26b-a4b-it"
+    assert configured.model == "google/gemma-4-26b-a4b-it:free"
 
 
 def test_health_endpoint() -> None:
