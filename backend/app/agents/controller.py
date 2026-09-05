@@ -19,6 +19,12 @@ from app.reconciliation.models import (
     ReconciliationStatus,
 )
 from app.reconciliation.normalizer import load_bank_settlements, load_gateway_transactions, load_invoices
+from app.services.razorpay import (
+    RazorpayError,
+    configured_razorpay_client,
+    load_razorpay_config,
+)
+from app.services.razorpay.adapter import RazorpayAdapter
 
 from .investigator import build_context, investigate_exception
 from .models import InvestigationResult
@@ -27,6 +33,65 @@ from .provider import InvestigationProvider
 GENERATED_DATA = Path(__file__).resolve().parents[3] / "data" / "generated"
 REVIEW_STATUSES = {ReconciliationStatus.NEEDS_REVIEW, ReconciliationStatus.UNRESOLVED}
 DEFAULT_MAX_AI_INVESTIGATIONS = 5
+
+
+def load_razorpay_cases(
+    year: int,
+    month: int,
+    day: int | None = None,
+    count: int = 500,
+    skip: int = 0,
+) -> list[CaseBundle]:
+    """Load reconciliation cases from Razorpay settlement reconciliation data."""
+    config = load_razorpay_config()
+    if config is None:
+        raise RazorpayError("Razorpay API credentials not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.")
+    client = configured_razorpay_client()
+    if client is None:
+        raise RazorpayError("Razorpay client unavailable.")
+
+    try:
+        gateways, banks = RazorpayAdapter.fetch_and_normalize_recon(
+            provider=client,
+            year=year,
+            month=month,
+            day=day,
+            count=count,
+            skip=skip,
+        )
+    except RazorpayError:
+        raise
+    except Exception as error:
+        raise RazorpayError(f"Razorpay data fetch failed: {error}") from error
+
+    invoices = _infer_invoices_from_gateways(gateways)
+    records = match_records(invoices, gateways, banks)
+    results = reconcile_records(invoices, gateways, banks)
+    return [CaseBundle(record, result) for record, result in zip(records, results, strict=True)]
+
+
+def _infer_invoices_from_gateways(gateways: list[GatewayTransaction]) -> list[Invoice]:
+    """Infer invoice records from gateway transactions.
+
+    In Razorpay mode, we don't have explicit invoice records.
+    We infer them from gateway transaction data using the transaction_id as invoice reference.
+    """
+    seen: set[str] = set()
+    invoices: list[Invoice] = []
+    for gateway in gateways:
+        tid = gateway.transaction_id
+        if tid in seen:
+            continue
+        seen.add(tid)
+        invoices.append(
+            Invoice(
+                transaction_id=tid,
+                invoice_date=gateway.transaction_date,
+                amount_inr=gateway.amount_inr,
+                currency=gateway.currency,
+            )
+        )
+    return invoices
 
 
 @dataclass(frozen=True)
@@ -80,6 +145,26 @@ def load_cases() -> list[CaseBundle]:
     return [CaseBundle(record, result) for record, result in zip(records, results, strict=True)]
 
 
+def load_cases_by_mode(
+    mode: str = "synthetic",
+    year: int | None = None,
+    month: int | None = None,
+    day: int | None = None,
+    count: int = 500,
+    skip: int = 0,
+) -> list[CaseBundle]:
+    """Load cases based on the selected data mode."""
+    if mode == "synthetic":
+        if year is not None or month is not None:
+            raise ValueError("Synthetic mode does not accept year/month/day parameters.")
+        return load_cases()
+    if mode == "razorpay":
+        if year is None or month is None:
+            raise ValueError("Razorpay mode requires year and month parameters.")
+        return load_razorpay_cases(year=year, month=month, day=day, count=count, skip=skip)
+    raise ValueError(f"Unknown mode: {mode}. Expected 'synthetic' or 'razorpay'.")
+
+
 def _case_report(bundle: CaseBundle, investigation: InvestigationResult | None) -> ControllerCaseReport:
     result = bundle.result
     requires_review = result.requires_review or bool(investigation and investigation.requires_human_review)
@@ -98,10 +183,26 @@ def run_controller(
     provider: InvestigationProvider | None = None,
     bundles: list[CaseBundle] | None = None,
     max_ai_investigations: int | None = None,
+    mode: str = "synthetic",
+    year: int | None = None,
+    month: int | None = None,
+    day: int | None = None,
+    count: int = 500,
+    skip: int = 0,
 ) -> ControllerRunResult:
     """Run deterministic reconciliation for the full batch and investigate review cases."""
     started = perf_counter()
-    case_bundles = bundles if bundles is not None else load_cases()
+    if bundles is not None:
+        case_bundles = bundles
+    else:
+        case_bundles = load_cases_by_mode(
+            mode=mode,
+            year=year,
+            month=month,
+            day=day,
+            count=count,
+            skip=skip,
+        )
     results = [bundle.result for bundle in case_bundles]
     counts = {status: sum(result.status == status for result in results) for status in ReconciliationStatus}
     review_cases: list[ControllerCaseReport] = []

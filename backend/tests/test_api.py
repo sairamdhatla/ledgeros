@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.agents.provider import configured_provider
+from app.services.razorpay import RazorpayError
+from app.services.razorpay.models import RazorpayReconItem
 
+from tests.fixtures.razorpay_fixtures import MockRazorpayProvider, sample_recon_items
 
 client = TestClient(app)
 
@@ -124,3 +128,118 @@ def test_razorpay_settlements_unconfigured_returns_503(monkeypatch) -> None:
     response = client.get("/api/razorpay/settlements")
     assert response.status_code == 503
     assert "not configured" in response.json()["detail"]
+
+
+def test_agent_run_default_synthetic_mode() -> None:
+    """Test /api/agent/run defaults to synthetic mode."""
+    response = client.post("/api/agent/run")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_records_processed"] == 500
+
+
+def test_agent_run_explicit_synthetic_mode() -> None:
+    """Test /api/agent/run with explicit synthetic mode."""
+    response = client.post("/api/agent/run?mode=synthetic")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_records_processed"] == 500
+
+
+def test_agent_run_invalid_mode() -> None:
+    """Test /api/agent/run with invalid mode returns 400."""
+    response = client.post("/api/agent/run?mode=invalid")
+    assert response.status_code == 422  # Validation error
+
+
+def test_agent_run_razorpay_mode_mocked() -> None:
+    """Test /api/agent/run in razorpay mode with mocked provider."""
+    recon_items = sample_recon_items()
+    mock_provider = MockRazorpayProvider(recon_items=recon_items)
+
+    with patch("app.api.routes.configured_razorpay_client") as route_client:
+        route_client.return_value = mock_provider
+        with patch("app.api.routes.load_razorpay_config") as route_config:
+            route_config.return_value = Mock(key_id="test", key_secret="test")
+            with patch("app.agents.controller.configured_razorpay_client") as ctrl_client:
+                ctrl_client.return_value = mock_provider
+                with patch("app.agents.controller.load_razorpay_config") as ctrl_config:
+                    ctrl_config.return_value = Mock(key_id="test", key_secret="test")
+                    response = client.post("/api/agent/run?mode=razorpay&year=2025&month=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_records_processed"] == 2
+
+
+def test_agent_run_razorpay_mode_missing_credentials() -> None:
+    """Test /api/agent/run razorpay mode returns 503 when credentials missing."""
+    with patch("app.api.routes.load_razorpay_config", return_value=None):
+        response = client.post("/api/agent/run?mode=razorpay&year=2025&month=1")
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
+
+
+def test_agent_run_razorpay_mode_api_failure() -> None:
+    """Test /api/agent/run razorpay mode handles API failure."""
+    mock_provider = MockRazorpayProvider(should_fail=True, error=RazorpayError("API error"))
+
+    with patch("app.api.routes.configured_razorpay_client") as route_client:
+        route_client.return_value = mock_provider
+        with patch("app.api.routes.load_razorpay_config") as route_config:
+            route_config.return_value = Mock(key_id="test", key_secret="test")
+            with patch("app.agents.controller.configured_razorpay_client") as ctrl_client:
+                ctrl_client.return_value = mock_provider
+                with patch("app.agents.controller.load_razorpay_config") as ctrl_config:
+                    ctrl_config.return_value = Mock(key_id="test", key_secret="test")
+                    response = client.post("/api/agent/run?mode=razorpay&year=2025&month=1")
+
+    assert response.status_code == 502
+    assert "API error" in response.json()["detail"]
+
+
+def test_agent_run_razorpay_mode_timeout() -> None:
+    """Test /api/agent/run razorpay mode handles timeout."""
+    from httpx import TimeoutException
+    mock_provider = MockRazorpayProvider(should_fail=True, error=TimeoutException("Request timed out"))
+
+    with patch("app.api.routes.configured_razorpay_client") as route_client:
+        route_client.return_value = mock_provider
+        with patch("app.api.routes.load_razorpay_config") as route_config:
+            route_config.return_value = Mock(key_id="test", key_secret="test")
+            with patch("app.agents.controller.configured_razorpay_client") as ctrl_client:
+                ctrl_client.return_value = mock_provider
+                with patch("app.agents.controller.load_razorpay_config") as ctrl_config:
+                    ctrl_config.return_value = Mock(key_id="test", key_secret="test")
+                    response = client.post("/api/agent/run?mode=razorpay&year=2025&month=1")
+
+    assert response.status_code == 502
+    assert "Razorpay data fetch failed" in response.json()["detail"]
+
+
+def test_agent_run_razorpay_no_credentials_exposed() -> None:
+    """Test /api/agent/run razorpay mode does not expose credentials."""
+    recon_items = sample_recon_items()
+    mock_provider = MockRazorpayProvider(recon_items=recon_items)
+
+    with patch("app.api.routes.configured_razorpay_client") as route_client:
+        route_client.return_value = mock_provider
+        with patch("app.api.routes.load_razorpay_config") as route_config:
+            route_config.return_value = Mock(key_id="rzp_test_1234567890", key_secret="super_secret_xyz")
+            with patch("app.agents.controller.configured_razorpay_client") as ctrl_client:
+                ctrl_client.return_value = mock_provider
+                with patch("app.agents.controller.load_razorpay_config") as ctrl_config:
+                    ctrl_config.return_value = Mock(key_id="rzp_test_1234567890", key_secret="super_secret_xyz")
+                    response = client.post("/api/agent/run?mode=razorpay&year=2025&month=1")
+
+    assert response.status_code == 200
+    response_text = response.text
+    assert "super_secret_xyz" not in response_text
+    assert "rzp_test_1234567890" not in response_text
+
+
+def test_agent_run_razorpay_requires_year_month() -> None:
+    """Test /api/agent/run razorpay mode requires year and month."""
+    response = client.post("/api/agent/run?mode=razorpay")
+    assert response.status_code == 400
+    assert "requires year and month" in response.json()["detail"]

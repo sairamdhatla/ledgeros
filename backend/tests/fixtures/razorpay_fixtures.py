@@ -1,4 +1,10 @@
-"""Official Razorpay API mock payloads for testing."""
+"""Official Razorpay API mock payloads and shared test fixtures."""
+
+from decimal import Decimal
+from typing import Any
+
+from app.services.razorpay import RazorpayError
+from app.services.razorpay.models import RazorpayReconItem
 
 SAMPLE_PAYMENT_PAYLOAD = {
     "id": "pay_TEST0000000001",
@@ -172,3 +178,82 @@ SAMPLE_ORDER_PAYLOAD = {
     "status": "paid",
     "created_at": 1735686000,
 }
+
+
+class MockRazorpayProvider:
+    """Mock Razorpay provider for testing."""
+
+    def __init__(
+        self,
+        recon_items: list[RazorpayReconItem] | None = None,
+        should_fail: bool = False,
+        error: Exception | None = None,
+    ) -> None:
+        self.recon_items = recon_items or []
+        self.should_fail = should_fail
+        self.error = error
+
+    def get_settlement_recon(self, **kwargs: Any) -> list[RazorpayReconItem]:
+        if self.should_fail:
+            if self.error:
+                raise self.error
+            raise RazorpayError("Mock Razorpay error")
+        return self.recon_items
+
+
+def sample_recon_items() -> list[RazorpayReconItem]:
+    """Create sample recon items for testing."""
+    return [
+        RazorpayReconItem(
+            entity_id="pay_TEST0000000001",
+            type="payment",
+            debit=0,
+            credit=488200,
+            amount=500000,
+            currency="INR",
+            fee=10000,
+            tax=1800,
+            on_hold=False,
+            settled=True,
+            created_at=1735689600,
+            settled_at=1735862400,
+            settlement_id="setl_BATCH00000001",
+            description="Payment for subscription",
+            notes={},
+            payment_id=None,
+            settlement_utr="UTRTEST987654321",
+            order_id="order_TEST0000000001",
+            order_receipt="INV-2025-001",
+            method="card",
+            card_network="MasterCard",
+            card_issuer="HDFC",
+            card_type="credit",
+            dispute_id=None,
+        ),
+        RazorpayReconItem(
+            entity_id="pay_TEST0000000002",
+            type="payment",
+            debit=0,
+            credit=244100,
+            amount=250000,
+            currency="INR",
+            fee=5000,
+            tax=900,
+            on_hold=False,
+            settled=True,
+            created_at=1735776000,
+            settled_at=1735862400,
+            settlement_id="setl_BATCH00000001",
+            description="UPI Payment",
+            notes=None,
+            payment_id=None,
+            settlement_utr="UTRTEST987654321",
+            order_id="order_TEST0000000002",
+            order_receipt="INV-2025-002",
+            method="upi",
+            card_network=None,
+            card_issuer=None,
+            card_type=None,
+            dispute_id=None,
+        ),
+    ]

@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.agents.controller import CaseBundle, load_cases, run_controller
+from app.agents.controller import CaseBundle, load_cases, load_cases_by_mode, run_controller
 from app.agents.investigator import build_context, investigate_exception
 from app.agents.models import InvestigationResult
 from app.reconciliation.models import (
@@ -175,8 +175,45 @@ def investigate(case_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/agent/run")
-def run_agent() -> dict[str, Any]:
-    return run_controller().model_dump(mode="json")
+def run_agent(
+    mode: str = Query(default="synthetic", pattern="^(synthetic|razorpay)$"),
+    year: int | None = Query(default=None, ge=2020, le=2030),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
+    count: int = Query(default=500, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    if mode == "razorpay":
+        if year is None or month is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Razorpay mode requires year and month parameters.",
+            )
+        config = load_razorpay_config()
+        if config is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Razorpay API credentials not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend/.env",
+            )
+        client = configured_razorpay_client()
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Razorpay API client unavailable.",
+            )
+    try:
+        return run_controller(
+            mode=mode,
+            year=year,
+            month=month,
+            day=day,
+            count=count,
+            skip=skip,
+        ).model_dump(mode="json")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RazorpayError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @router.get("/api/razorpay/status")
